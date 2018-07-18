@@ -1,0 +1,371 @@
+#include "assignment_5/frontier_calc.h"
+
+Frontier_Calc::Frontier_Calc()
+{
+}
+
+    std::map<int, int> Frontier_Calc::scan(cv::Mat &image) //!< Function for calculating and storing all frontiers in pixel coordinates
+    {
+        std::map<int, int> all_pixel_frontiers;
+
+        for(int i=0; i<image.rows;i++) //!< Every pixel is iterated and checked. If a white pixel coordinate borders unknown space (127) then
+            {                           //!< It is stored in a map
+            for (int j=0;j<image.cols;j++)
+              {
+                if ((i < image.rows && j < image.cols && i > 0 && j > 0))
+                {
+                if (image.at<uchar>(i,j) == 255 && ((image.at<uchar>((i+1),j) == 127) ||
+                                                     (image.at<uchar>(i,(j+1)) == 127) || (image.at<uchar>((i+1),(j+1)) == 127)
+                                                    ||(image.at<uchar>((i-1),j) == 127) || (image.at<uchar>(i,(j-1)) == 127)
+                                                    || (image.at<uchar>((i-1),(j-1)) == 127)))
+                {
+                    all_pixel_frontiers.insert(std::pair<int, int>(j,i));
+
+                    image.at<uchar>(i,j) = 90;
+
+                }
+                }
+
+              }
+            }
+
+        return all_pixel_frontiers; //!< The container containing the pixel coordinates of all frontiers is returned to the goalPose function
+
+    }
+    //Assume the robot will begin in the centre of the image
+
+    void Frontier_Calc::goalPose(double x, double y, double goal_x, double goal_y, cv::Mat &image)
+    {
+
+        //Determine the point that is closest to the robot
+        std::map<int, int> all_pixel_frontiers = scan(image); //!< Identifies and plots all frontiers in grayscale 90
+        std::map<int, int> all_frontiers = convert_to_global(all_pixel_frontiers); //!< converts the pixel coordinates of all frontier to global
+        cv::Point pt1 = global_topixel(x, y);   //!< Converts robot coordinates from global to pixel (for plotting)
+        cv::Point pt2 = global_topixel(goal_x, goal_y); //!< Converts goal position from global to pixel (for plotting)
+        cv::Scalar colour(180);
+
+        cv::line(image, pt1, pt2, colour, 1, 8, 0);
+
+        plot_goalpos(pt2, image); //!< The pixel coordinates of the goal pose are sent for plotting on image in grayscale
+        plot_robotposition(pt1, image); //!< The pixel coordinates of the robot's position are sent for plotting on image in grayscale
+
+
+        std::map<int, int> frontiers_on_line; //!< This map will store the pixel coordinates of all frontiers neighbouring the cv::line
+        std::vector<double> rel_mag; //!< This vector will store the magnitude of frontier coordinates in relation to the robot position
+        int pixel_x;
+        int pixel_y;
+
+        for(int i=0; i<image.rows;i++) //!< 255 is a value denoting a white cell. 180 denotes a cell occupied by a line. 90 denotes a frontier.
+            {                          //!< This iteration through an cv::Mat image checks whether a white cell borders a frontier and the plotted
+                                       //!< line. It inserts this cell into a map.
+            for (int j=0;j<image.cols;j++)
+              {
+                if ((i < image.rows && j < image.cols && i > 0 && j > 0))
+                {
+                if (image.at<uchar>(i,j) == 255 && (((image.at<uchar>((i+1),j) == 180) || (image.at<uchar>(i,(j+1)) == 180) ||
+                                                     (image.at<uchar>((i+1),(j+1)) == 180) || (image.at<uchar>((i-1),j+1) == 180) ||
+                                                     (image.at<uchar>((i-1),j) == 180) || (image.at<uchar>((i-1),j-1) == 180)
+                                                     || (image.at<uchar>((i),j-1) == 180) || (image.at<uchar>((i+1),j-1) == 180))
+                                                    && ((image.at<uchar>((i+1),j) == 90) || (image.at<uchar>(i,(j+1)) == 90) ||
+                                                        (image.at<uchar>((i+1),(j+1)) == 90) || (image.at<uchar>((i-1),j+1) == 90) ||
+                                                        (image.at<uchar>((i-1),j) == 90) || (image.at<uchar>((i-1),j-1) == 90)
+                                                        || (image.at<uchar>((i),j-1) == 90) || (image.at<uchar>((i+1),j-1) == 90))))
+                {
+
+                    //image.at<uchar>(i,j) = 0; //Plots all frontiers near the line of shortest distance
+                    frontiers_on_line.insert(std::pair<int, int>(j,i));
+
+                }
+                }
+              }
+            }
+
+        std::map<int, int> frontiers_on_line_global = convert_to_global(frontiers_on_line);
+
+        if(frontiers_on_line_global.size() > 0) //!< If any neigbouring line white cells next a frontier were mapped execute the code below
+        {
+            for (std::map<int,int>::iterator it=frontiers_on_line_global.begin(); it!=frontiers_on_line_global.end(); ++it)
+            { //!< Iterates through the map - through x and y values
+                int xp = it->first;
+                int yp = it->second;
+
+                double distance_torobot = sqrt(pow((x - xp), 2)+ pow((y - yp), 2)); //!< Calculates the magnitude value between the robot
+                rel_mag.push_back(distance_torobot); //!< and white cells neighbouring frontiers. The magnitudes are pushed into a vector
+            }
+            std::sort(rel_mag.begin(),rel_mag.end()); //!< The magnitude vector is sorted from smallest to largest value
+
+            for (std::map<int,int>::iterator it=frontiers_on_line_global.begin(); it!=frontiers_on_line_global.end(); ++it)
+            {
+                int xp = it->first;
+                int yp = it->second;
+
+                double distance_torobot = sqrt(pow((x - xp), 2)+ pow((y - yp), 2));
+
+                if(distance_torobot == rel_mag.front()) //!< If the magnitude of a specific coordinate matches the lowest magnitude then it must
+                {                                       //!< be the coordinate of the closest white cell that neighbours a frontier and the line to
+                                                        //!< the robot.
+                    pixel_x = it->first;
+                    pixel_y = it->second;
+
+                    cv::Point plot = global_topixel(pixel_x, pixel_y); //!< Plot that pixel as the goal pose by converting the global coordinate into pixel coordinates
+
+                    int u = plot.x; //!< Take out coordinate x from cv::Point
+                    int v = plot.y; //!< Take out coordinate y from cv::Point
+
+                    image.at<uchar>(v, u) = 120; //!< Plot as grayscale value 120
+
+                    buffer_goal_cal.lock();
+
+                    goal_pose.insert(std::pair<int, int>(pixel_x,pixel_y)); //!< Insert the global coordinate into a map
+
+                    buffer_goal_cal.unlock();
+                }
+
+            }
+
+        }
+    else{   //!< If no white pixels bordering frontiers and the line are found, get the closest frontier to the robot
+            for (std::map<int,int>::iterator it=all_frontiers.begin(); it!=all_frontiers.end(); ++it)
+            {
+                int xp = it->first;
+                int yp = it->second;
+
+                double distance_torobot = sqrt(pow((x - xp), 2)+ pow((y - yp), 2));
+                rel_mag.push_back(distance_torobot);
+            }
+            std::sort(rel_mag.begin(),rel_mag.end()); //!< Same sorting procedure as above
+
+            for (std::map<int,int>::iterator it=all_frontiers.begin(); it!=all_frontiers.end(); ++it)
+            {
+                int xp = it->first;
+                int yp = it->second;
+
+                double distance_torobot = sqrt(pow((x - xp), 2)+ pow((y - yp), 2));
+
+                if(distance_torobot == rel_mag.front()) //!< If the magnitude of the frontier coordinates matches the smallest magnitude in the vector
+                {                                       //!< return the coordinates, plot them and designate them as the goal pose
+                    pixel_x = it->first;
+                    pixel_y = it->second;
+
+                    cv::Point plot = global_topixel(pixel_x, pixel_y);
+
+                    int u = plot.x;
+                    int v = plot.y;
+
+                    image.at<uchar>(v, u) = 120;
+
+                    buffer_goal_cal.lock();
+
+                    goal_pose.insert(std::pair<int, int>(pixel_x,pixel_y)); //!< Push the chosen coordinates into a map to be displayed in GazeboRetrieve
+
+                    buffer_goal_cal.unlock();
+                }
+
+            }
+
+
+        }
+
+}
+
+
+    std::map<int, int> Frontier_Calc::convert_to_global(std::map<int, int> frontiers) //!< This function takes in a map full of pixel coordinates
+    {                                                                                 //!< converts each coordinate, inserts them into a map
+        std::map<int, int> global_frontiers;                                          //!< and returns this map
+
+        for (std::map<int,int>::iterator it=frontiers.begin(); it!=frontiers.end(); ++it)
+        {
+            int xf = it->first;
+            int yf = it->second;
+
+            if(xf < 100 && yf < 100) //!< If the pixel coordinate lies in the top left quadrant of the image then:
+            {
+                int gxf = xf - 100;         //!< subtract 100 from x coordinate
+                int gyf = abs((yf - 100));  //!< subtract 100 from y coordinate and return its absolute value (y is always positive)
+                global_frontiers.insert(std::pair<int, int>(gxf, gyf)); //!< Insert the converted coordinates into a map
+            }
+            else if(xf > 100 && yf < 100)   //!< The statements below take care of the conversion for different cases
+            {
+                int gxf = xf - 100;
+                int gyf = abs((yf - 100));
+                global_frontiers.insert(std::pair<int, int>(gxf, gyf));
+            }
+            else if(xf < 100 && yf > 100)
+            {
+                int gxf = xf - 100;
+                int gyf = (yf - 100)*-1;
+                global_frontiers.insert(std::pair<int, int>(gxf, gyf));
+            }
+            else if(xf > 100 && yf > 100)
+            {
+                int gxf = xf - 100;
+                int gyf = (yf - 100)*-1;
+                global_frontiers.insert(std::pair<int, int>(gxf, gyf));
+            }
+            else if(xf == 100 && yf == 100)
+            {
+                int gxf = 0;
+                int gyf = 0;
+                global_frontiers.insert(std::pair<int, int>(gxf, gyf));
+            }
+            else
+            {
+                int gxf = -100;
+                int gyf = 100;
+                global_frontiers.insert(std::pair<int, int>(gxf, gyf));
+            }
+
+        }
+
+        return global_frontiers; //!< The map is returned
+
+    }
+
+    cv::Point Frontier_Calc::global_topixel(double x, double y) //!< A catesian coordinate is passed in as two double values. The coordinates are
+    {                                                           //!< converted into pixel coordinates and stored in a cv::Point.
+        double px;                                              //!< This cv::Point is returned
+        double py;
+
+        if(x < 0 && y > 0) //!< If the catesian coordinate lies in the top left plane apply the appropriate equations to convert it
+        {
+            px = x + 100; //!< Add 100 to the x coordinate
+            py = -y + 100; //!< Add 100 to the polarity inverted y value to get the pixel coordinate
+
+        }
+        else if(x > 0 && y > 0) //!< The statements below take care of the conversion for different cases
+        {
+            px = x + 100;
+            py = -y + 100;
+
+        }
+        else if(x < 0 && y < 0)
+        {
+            px = x + 100;
+            py = -y + 100;
+
+        }
+        else if(x > 0 && y < 0)
+        {
+            px = x + 100;
+            py = -y + 100;
+
+        }
+        else if(x == -100 && y == 100)
+        {
+            px = 0;
+            py = 0;
+
+        }
+        else if(x == 0 && y == 0)
+        {
+            px = 100;
+            py = 100;
+
+        }
+
+        cv::Point ppt(px, py); //!< Store the converted value in a cv::Point
+
+        return ppt; //!< Return the cv::Point
+
+    }
+
+    void Frontier_Calc::yaw_Heading(double x, double y, double goal_x, double goal_y) //!< Calculates the angle between the robot and goal pose
+    {
+        double Y = goal_x - x; //!< Get the displace between two x coordinates
+        double X = goal_y - y; //!< Get the displace between two y coordinates
+
+
+        double angleInRadians = atan2(Y,X); //!< Apply trigonometry to get the angle between two points
+        double angleInDegrees = angleInRadians*180/M_PI;    //!< Convert the angle from radians into degrees
+        double yaw = angleInDegrees/60; //!< Convert degrees into the heading coordinate system used by the robot
+        buffer_gp_angle.lock();
+
+        gp_angle.push_back(yaw);
+
+        buffer_gp_angle.unlock();
+
+
+    }
+
+    void Frontier_Calc::colour_in_image(cv::Mat &image) //!< After the image is converted from grayscale to RGB in GazeboRetrieve it is passed
+    {                                                   //!< into here.
+
+        for(int i = 0; i < image.rows; ++i){ //!< The rgb image is searched for specific grayscale values that were plotted before conversion
+                                            //!< These specific values denote the robot's position, frontiers, goal pose etc
+            for(int j = 0; j < image.cols; ++j){    //!< A RGB colour replaces these values to make the components more distinguishable from each other
+
+                if((i < image.rows && j < image.cols && i > 0 && j > 0)){
+                    if(image.at<cv::Vec3b>(i,j)[0] == 90 || image.at<cv::Vec3b>(i,j)[1] == 90 || image.at<cv::Vec3b>(i,j)[2] == 90)
+                    {   //!< Frontiers have been previously plotted as 90 in grayscale. All 90 is replaced by (0,255,0) which denotes green
+
+                        image.at<cv::Vec3b>(i,j)[0] = 0;
+                        image.at<cv::Vec3b>(i,j)[1] = 255;
+                        image.at<cv::Vec3b>(i,j)[2] = 0;
+                    }
+                    if(image.at<cv::Vec3b>(i,j)[0] == 80 || image.at<cv::Vec3b>(i,j)[1] == 80 || image.at<cv::Vec3b>(i,j)[2] == 80)
+                    {   //!< Goal position has been previously plotted as 80 in grayscale. All 80 is replaced by (0,0,255) which denotes red
+
+                        image.at<cv::Vec3b>(i,j)[0] = 0;
+                        image.at<cv::Vec3b>(i,j)[1] = 0;
+                        image.at<cv::Vec3b>(i,j)[2] = 255;
+                    }
+                    if(image.at<cv::Vec3b>(i,j)[0] == 60 || image.at<cv::Vec3b>(i,j)[1] == 60 || image.at<cv::Vec3b>(i,j)[2] == 60)
+                    {   //!< Robot position has been previously plotted as 60 in grayscale. All 60 is replaced by (0,0,255) which denotes purple
+
+                        image.at<cv::Vec3b>(i,j)[0] = 255;
+                        image.at<cv::Vec3b>(i,j)[1] = 0;
+                        image.at<cv::Vec3b>(i,j)[2] = 255;
+                    }
+                    if(image.at<cv::Vec3b>(i,j)[0] == 120 || image.at<cv::Vec3b>(i,j)[1] == 120 || image.at<cv::Vec3b>(i,j)[2] == 120)
+                    {   //!< Goal pose has been previously plotted as 120 in grayscale. All 120 is replaced by (255,0,0) which denotes blue
+
+                        image.at<cv::Vec3b>(i,j)[0] = 255;
+                        image.at<cv::Vec3b>(i,j)[1] = 0;
+                        image.at<cv::Vec3b>(i,j)[2] = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    void Frontier_Calc::plot_goalpos(cv::Point gpt, cv::Mat &image) //!< This function plots the goal position as 80 in grayscale
+    {
+
+        int x = gpt.x;  //!< The respective coordinates are taken out from cv::Point and plotted below
+        int y = gpt.y;
+
+        for(int i=0; i<image.rows;i++)
+            {
+            for (int j=0;j<image.cols;j++)
+              {
+                if ((i < image.rows && j < image.cols && i > 0 && j > 0))
+                {
+
+                    image.at<uchar>(y, x) = 80;
+                }
+            }
+        }
+
+    }
+
+    void Frontier_Calc::plot_robotposition(cv::Point rpt, cv::Mat &image)   //!< This function plots the goal position as 80 in grayscale
+    {                                                       //!< The respective coordinates are taken out from cv::Point and plotted below
+
+        int x = rpt.x;
+        int y = rpt.y;
+
+        for(int i=0; i<image.rows;i++)
+            {
+            for (int j=0;j<image.cols;j++)
+              {
+                if ((i < image.rows && j < image.cols && i > 0 && j > 0))
+                {
+
+                    image.at<uchar>(y, x) = 60;
+                }
+            }
+        }
+
+    }
+
+
