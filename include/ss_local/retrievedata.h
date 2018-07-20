@@ -16,6 +16,7 @@
 #include "hark_msgs/HarkSource.h"
 #include <ros/callback_queue.h>
 #include <boost/thread.hpp>
+#include <tf/transform_listener.h>
 
 #include "hark_msgs/HarkFeature.h"
 #include "hark_msgs/HarkFeatureVal.h"
@@ -63,12 +64,16 @@ public:
 
     void coorCallback(const hark_msgs::HarkSource::ConstPtr& msg); //!< HarkSource callback function - pushes azimuth & elevation data into a deque
 
+    void tfCallback(const tf::tfMessageConstPtr& msg);
+
 
 private:
 
 
     ros::NodeHandle nh_;    //!< Node handle
     ros::Subscriber sub1_;  //!< Subscriber 1
+    ros::Subscriber sub2_;  //!< Subscriber 2
+    tf::TransformListener listener_; //! Transform listener
 
 
     int count_; //!< Counter for node execution iterations
@@ -81,6 +86,13 @@ private:
         std::mutex buffer_mutex_;   //!< Mutex will be used to lock and unlock data members of struct
     };
     DataBuffer buffer; //!< DataBuffer object
+
+    struct TfBuffer
+    {
+        std::deque<geometry_msgs::TransformStamped> deque_tf;
+        std::mutex tf_buffer_;  //!< Mutex will be used to lock and unlock data members of struct
+    };
+    TfBuffer tf_b;
 };
 
 #endif // RETRIEVEDATA_H

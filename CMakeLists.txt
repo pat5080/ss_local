@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   hark_msgs
   genmsg
   message_generation
+  tf
 )
 
 LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)

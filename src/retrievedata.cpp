@@ -4,8 +4,9 @@ RetrieveData::RetrieveData(ros::NodeHandle nh)
     : nh_(nh)
 {
     sub1_ = nh_.subscribe("/HarkSource", 1000, &RetrieveData::coorCallback, this); //!< ROS subscriber to HarkSource
+    sub2_ = nh_.subscribe("/tf", 1000, &RetrieveData::tfCallback, this); //!< ROS subscriber to /tf tree
 
-    ros::NodeHandle pn("~");
+    //ros::NodeHandle pn("~");
 
     count_ = 0;
 }
@@ -48,6 +49,30 @@ void RetrieveData::coorCallback(const hark_msgs::HarkSource::ConstPtr& msg) //!<
       }
 }
 
+void RetrieveData::tfCallback(const tf::tfMessage::ConstPtr& msg)
+{
+    //tf::Transform transform = msg->transforms.end();
+    const geometry_msgs::TransformStamped transform(msg->transforms.front());
+    // tf::StampedTransform transform = msg->
+
+//    try{
+//        listener_.lookupTransform("ORB_SLAM2/World", "ORB_SLAM2/Camera", ros::Time(0), transform);
+//    }
+//     catch(tf::TransformException ex)
+//    {
+//         ROS_ERROR("%s", ex.what());
+//         ros::Duration(1.0).sleep();
+//    }
+
+    tf_b.tf_buffer_.lock();
+    tf_b.deque_tf.push_back(transform);
+    if(tf_b.deque_tf.size()>2){
+        tf_b.deque_tf.pop_front();
+    }
+    tf_b.tf_buffer_.unlock();
+
+}
+
 
 void RetrieveData::separateThread(){
     //The below loop runs until ros is shutdown, to ensure this thread does not remain
@@ -60,13 +85,24 @@ void RetrieveData::separateThread(){
 
     double azimuth;
     double elevation;
+    double yaw;
+    double x;
+    double y;
+    double z;
+
+    tf::Quaternion quat;
 
     ros::Time timeCoor = ros::Time::now();;
 
 
-
     while (ros::ok()) {
+
+
+
+
+
         int deqSz = -1;
+        int deqSr = -1;
 
         buffer.buffer_mutex_.lock();
         deqSz = buffer.deque_harksource.size();
@@ -82,7 +118,35 @@ void RetrieveData::separateThread(){
         }
         buffer.buffer_mutex_.unlock();
 
+        tf_b.tf_buffer_.lock();
+        deqSr = tf_b.deque_tf.size();
+        if (deqSr >0){
+
+            geometry_msgs::TransformStamped transform = tf_b.deque_tf.front();
+            //Pull out values from transform
+            x = transform.transform.translation.x;
+            y = transform.transform.translation.y;
+            z = transform.transform.translation.z;
+
+            quat = tf::Quaternion(transform.transform.rotation.x, transform.transform.rotation.y,
+                                               transform.transform.rotation.z, transform.transform.rotation.w);
+
+            quat.normalize();
+
+            yaw = tf::getYaw(quat);
+
+            //quat(transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z, transform.transform.rotation.w);
+
+            tf_b.deque_tf.pop_front();
+        }
+        tf_b.tf_buffer_.unlock();
+
+
+
         std::cout << timeCoor << " Azimuth: " << azimuth << " Elevation: " << elevation << std::endl;
+        std::cout << "Translation " << " x: " << x << " y: " << y << " z: " << z << " Yaw: " << yaw << std::endl;
+        std::cout << "Quaternion " << "x: " << quat.getX() << " y: " << quat.getY() << " z: " << quat.getZ() << " w: " << quat.getW() << std::endl;
+
 
         rate_limiter.sleep();
         }
