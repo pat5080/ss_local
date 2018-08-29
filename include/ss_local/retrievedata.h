@@ -17,6 +17,7 @@
 #include <ros/callback_queue.h>
 #include <boost/thread.hpp>
 #include <tf/transform_listener.h>
+//#include "ss_local/kalmanfilter.h"
 
 #include "hark_msgs/HarkFeature.h"
 #include "hark_msgs/HarkFeatureVal.h"
@@ -35,6 +36,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include "geometry_msgs/PoseArray.h"
+#include <visualization_msgs/Marker.h>
 
 #include <sstream>
 #include <iostream>
@@ -66,6 +68,10 @@ public:
 
     void tfCallback(const tf::tfMessageConstPtr& msg);
 
+    void frameCallback(const sensor_msgs::Image::ConstPtr& msg);
+
+    void mapCallback(const visualization_msgs::Marker::ConstPtr& msg);
+
 
 private:
 
@@ -73,7 +79,15 @@ private:
     ros::NodeHandle nh_;    //!< Node handle
     ros::Subscriber sub1_;  //!< Subscriber 1
     ros::Subscriber sub2_;  //!< Subscriber 2
+    ros::Subscriber sub3_;  //!< Subscriber 3
+    ros::Subscriber sub4_;  //!< Subscriber 4
+
     tf::TransformListener listener_; //! Transform listener
+
+    image_transport::ImageTransport it_;    //!< Image transport
+    image_transport::Publisher image_pub_;  //!< Image publisher
+    cv_bridge::CvImagePtr cvPtr_; //!< cv::image pointer
+
 
 
     int count_; //!< Counter for node execution iterations
@@ -93,6 +107,20 @@ private:
         std::mutex tf_buffer_;  //!< Mutex will be used to lock and unlock data members of struct
     };
     TfBuffer tf_b;
+
+    struct frameBuffer
+    {
+        std::deque<cv::Mat> deque_frame;
+        std::mutex frame_buffer; //!< Mutex will be used to lock and unlock data members of struct
+    };
+    frameBuffer f_b;
+
+    struct mapBuffer
+    {
+        std::deque<visualization_msgs::Marker::ConstPtr> deque_Map;
+        std::mutex map_buffer;
+    };
+    mapBuffer map_;
 };
 
 #endif // RETRIEVEDATA_H
