@@ -1,3 +1,1 @@
-# ss_local
-
-Sound Source Localisation and Mapping
+# capstone2018
